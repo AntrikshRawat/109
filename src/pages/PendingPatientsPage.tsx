@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
-import type { PatientItem, DailySnapshot } from '../store/useAppStore'
+import type { PatientItem } from '../store/useAppStore'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 const formatCurrency = (n: number) =>
@@ -16,8 +16,7 @@ const parseDateStr = (s: string) => {
   return new Date(y, m - 1, d)
 }
 
-const getWeekday = (s: string) =>
-  parseDateStr(s).toLocaleDateString('en-IN', { weekday: 'short' })
+
 
 const getDay = (s: string) => parseDateStr(s).getDate()
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppStore, selectNetRevenue } from "../store/useAppStore";
-import type { PaymentRecord } from "../store/useAppStore";
+import { useAppStore } from "../store/useAppStore";
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 const formatCurrency = (n: number) =>
@@ -30,7 +29,7 @@ const getMonthFull = (s: string) =>
 const getYear = (s: string) => parseMonthStr(s).getFullYear();
 
 function PaymentsPage() {
-  const { payments, paymentRecords, addPaymentRecord, deletePaymentRecord } =
+  const { paymentRecords, addPaymentRecord, deletePaymentRecord } =
     useAppStore();
   const navigate = useNavigate();
 

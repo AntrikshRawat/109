@@ -97,7 +97,7 @@ const getTodayString = (): string => {
 /* ── Test / Seed Data ────────────────────────────────────────────────── */
 const TODAY = getTodayString() // 2026-06-06
 
-const SEED_TODAY_PATIENTS: PatientItem[] = []
+
 const SEED_HISTORY: DailySnapshot[] = []
 
 /* ── Store ───────────────────────────────────────────────────────────── */
