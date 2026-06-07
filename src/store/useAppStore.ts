@@ -9,6 +9,8 @@ export interface PatientItem {
   status: 'remaining' | 'treated'
   income: number
   dueAmount?: number
+  collectedBy?: string
+  owner?: string
   createdAt: number
   treatedAt?: number
 }
@@ -19,6 +21,8 @@ export interface PaymentRecord {
   type: 'income' | 'expense'
   amount: number
   remark: string
+  collectedBy?: string
+  owner?: string
   createdAt: number
 }
 
@@ -28,6 +32,8 @@ export interface DueRecord {
   name: string
   amount: number
   remark: string
+  collectedBy?: string
+  owner?: string
   createdAt: number
 }
 
@@ -63,6 +69,7 @@ interface AppState {
   paymentRecords: PaymentRecord[]
   dueRecords: DueRecord[]
   dailyHistory: DailySnapshot[]
+  locations: string[]
   currentDate: string   // 'YYYY-MM-DD' of the active day
 }
 
@@ -72,21 +79,37 @@ interface AppActions {
   setPayments: (data: Partial<Payments>) => void
   setDues: (data: Partial<Dues>) => void
   addPatient: (name: string, place: string) => boolean
-  markTreated: (id: string, income: number) => void
-  markTreatedWithDue: (id: string, dueAmount: number) => void
+  markTreated: (id: string, income: number, collectedBy: string) => void
+  markTreatedWithDue: (id: string, dueAmount: number, collectedBy: string) => void
+  updatePatientPayment: (id: string, type: 'income' | 'due', amount: number, collectedBy: string) => void
   markRemaining: (id: string) => void
   deletePatient: (id: string) => void
   addPaymentRecord: (type: 'income' | 'expense', amount: number, remark: string) => void
   deletePaymentRecord: (id: string) => void
   addDueRecord: (name: string, amount: number, remark: string) => void
-  collectDueRecord: (id: string, partialAmount?: number) => void
+  collectDueRecord: (id: string, partialAmount?: number, collectedBy?: string) => void
   deleteDueRecord: (id: string) => void
+  addLocation: (name: string) => boolean
+  deleteLocation: (name: string) => void
   archiveDayIfNeeded: () => void
 }
 
 /* ── Derived Helpers ─────────────────────────────────────────────────── */
 export const selectNetRevenue = (state: AppState) =>
   state.payments.income - state.payments.expense
+
+export const selectUniqueLocationCount = (state: AppState): number => {
+  const places = new Set<string>(state.locations || [])
+  for (const p of state.patients) {
+    if (p.place) places.add(p.place)
+  }
+  for (const snap of state.dailyHistory) {
+    for (const p of snap.patients) {
+      if (p.place) places.add(p.place)
+    }
+  }
+  return places.size
+}
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 const getTodayString = (): string => {
@@ -120,6 +143,7 @@ export const useAppStore = create<AppState & AppActions>()(
       paymentRecords: [],
       dueRecords: [],
       dailyHistory: SEED_HISTORY,
+      locations: [],
       currentDate: TODAY,
 
       // ─ actions
@@ -151,11 +175,11 @@ export const useAppStore = create<AppState & AppActions>()(
         return true;
       },
 
-      markTreated: (id, income) =>
+      markTreated: (id, income, collectedBy) =>
         set((s) => {
           const patients = s.patients.map((p) =>
             p.id === id
-              ? { ...p, status: 'treated' as const, income, treatedAt: Date.now() }
+              ? { ...p, status: 'treated' as const, income, collectedBy, treatedAt: Date.now() }
               : p,
           )
           const patientName = s.patients.find((p) => p.id === id)?.name || 'Patient'
@@ -164,6 +188,8 @@ export const useAppStore = create<AppState & AppActions>()(
             type: 'income',
             amount: income,
             remark: `Treatment: ${patientName}`,
+            collectedBy,
+            owner: collectedBy,
             createdAt: Date.now(),
           }
           return {
@@ -180,11 +206,11 @@ export const useAppStore = create<AppState & AppActions>()(
           }
         }),
 
-      markTreatedWithDue: (id, dueAmount) =>
+      markTreatedWithDue: (id, dueAmount, collectedBy) =>
         set((s) => {
           const patients = s.patients.map((p) =>
             p.id === id
-              ? { ...p, status: 'treated' as const, income: 0, dueAmount, treatedAt: Date.now() }
+              ? { ...p, status: 'treated' as const, income: 0, dueAmount, collectedBy, treatedAt: Date.now() }
               : p,
           )
           const patientName = s.patients.find((p) => p.id === id)?.name || 'Patient'
@@ -193,6 +219,8 @@ export const useAppStore = create<AppState & AppActions>()(
             name: patientName,
             amount: dueAmount,
             remark: 'Treatment Due',
+            collectedBy,
+            owner: collectedBy,
             createdAt: Date.now(),
           }
           return {
@@ -206,6 +234,66 @@ export const useAppStore = create<AppState & AppActions>()(
               totalDueMoney: s.dues.totalDueMoney + dueAmount,
             },
             dueRecords: [record, ...(s.dueRecords || [])],
+          }
+        }),
+
+      updatePatientPayment: (id, type, amount, collectedBy) =>
+        set((s) => {
+          const patient = s.patients.find((p) => p.id === id)
+          if (!patient || patient.status !== 'treated') return {}
+
+          const prevIncome = patient.income || 0
+          const prevDue = patient.dueAmount || 0
+
+          const newIncome = type === 'income' ? amount : 0
+          const newDue = type === 'due' ? amount : 0
+
+          const patients = s.patients.map((p) =>
+            p.id === id
+              ? { ...p, income: newIncome, dueAmount: newDue, collectedBy }
+              : p,
+          )
+
+          // Filter out old records for this patient
+          let paymentRecords = (s.paymentRecords || []).filter((r) => !r.id.includes(`patient_${id}`))
+          let dueRecords = (s.dueRecords || []).filter((r) => r.id !== `patient_${id}`)
+
+          // Add new record
+          const patientName = patient.name || 'Patient'
+          if (type === 'income') {
+            const record: PaymentRecord = {
+              id: `patient_${id}`,
+              type: 'income',
+              amount: newIncome,
+              remark: `Treatment: ${patientName}`,
+              collectedBy,
+              createdAt: Date.now(),
+            }
+            paymentRecords = [record, ...paymentRecords]
+          } else {
+            const record: DueRecord = {
+              id: `patient_${id}`,
+              name: patientName,
+              amount: newDue,
+              remark: 'Treatment Due',
+              collectedBy,
+              createdAt: Date.now(),
+            }
+            dueRecords = [record, ...dueRecords]
+          }
+
+          return {
+            patients,
+            payments: {
+              ...s.payments,
+              income: s.payments.income - prevIncome + newIncome,
+            },
+            dues: {
+              ...s.dues,
+              totalDueMoney: s.dues.totalDueMoney - prevDue + newDue,
+            },
+            paymentRecords,
+            dueRecords,
           }
         }),
 
@@ -317,7 +405,7 @@ export const useAppStore = create<AppState & AppActions>()(
           }
         }),
 
-      collectDueRecord: (id, partialAmount) =>
+      collectDueRecord: (id, partialAmount, collectedBy) =>
         set((s) => {
           const record = (s.dueRecords || []).find((r) => r.id === id)
           if (!record) return {}
@@ -333,6 +421,8 @@ export const useAppStore = create<AppState & AppActions>()(
             type: 'income',
             amount: amountToCollect,
             remark: `Due Collect${isPartial ? ' (Partial)' : ''}: ${record.name}`,
+            collectedBy,
+            owner: collectedBy,
             createdAt: Date.now(),
           }
 
@@ -356,7 +446,9 @@ export const useAppStore = create<AppState & AppActions>()(
               ? s.patients.map(p => p.id === patientId ? { 
                   ...p, 
                   income: p.income + amountToCollect, 
-                  dueAmount: (p.dueAmount || record.amount) - amountToCollect 
+                  dueAmount: (p.dueAmount || record.amount) - amountToCollect,
+                  collectedBy: collectedBy || p.collectedBy,
+                  owner: collectedBy || p.owner
                 } : p)
               : s.patients
           }
@@ -374,6 +466,23 @@ export const useAppStore = create<AppState & AppActions>()(
             },
           }
         }),
+
+      addLocation: (name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return false
+        const state = useAppStore.getState()
+        const existing = (state.locations || []).map((l) => l.toLowerCase())
+        if (existing.includes(trimmed.toLowerCase())) return false
+        set((s) => ({
+          locations: [...(s.locations || []), trimmed],
+        }))
+        return true
+      },
+
+      deleteLocation: (name) =>
+        set((s) => ({
+          locations: (s.locations || []).filter((l) => l !== name),
+        })),
 
       archiveDayIfNeeded: () =>
         set((s) => {

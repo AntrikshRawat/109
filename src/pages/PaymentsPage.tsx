@@ -29,7 +29,7 @@ const getMonthFull = (s: string) =>
 const getYear = (s: string) => parseMonthStr(s).getFullYear();
 
 function PaymentsPage() {
-  const { paymentRecords, addPaymentRecord, deletePaymentRecord } =
+  const { paymentRecords, addPaymentRecord, deletePaymentRecord, patients, dailyHistory } =
     useAppStore();
   const navigate = useNavigate();
 
@@ -82,7 +82,7 @@ function PaymentsPage() {
   };
 
   /* ── Derived monthly stats ─────────────────────────────────────── */
-  const { monthRecords, monthIncome, monthExpense, monthNet } = useMemo(() => {
+  const { monthRecords, monthIncome, monthExpense, monthNet, monthJituIncome, monthKuldeepIncome } = useMemo(() => {
     const records = (paymentRecords || []).filter((r) => {
       const d = new Date(r.createdAt);
       const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -91,9 +91,21 @@ function PaymentsPage() {
 
     let inc = 0;
     let exp = 0;
+    let jituInc = 0;
+    let kuldeepInc = 0;
+
     records.forEach((r) => {
-      if (r.type === "income") inc += r.amount;
-      else exp += r.amount;
+      if (r.type === "income") {
+        inc += r.amount;
+        const owner = (r.owner || r.collectedBy || "").toUpperCase();
+        if (owner === "JITU") {
+          jituInc += r.amount;
+        } else if (owner === "KULDEEP") {
+          kuldeepInc += r.amount;
+        }
+      } else {
+        exp += r.amount;
+      }
     });
 
     return {
@@ -101,6 +113,8 @@ function PaymentsPage() {
       monthIncome: inc,
       monthExpense: exp,
       monthNet: inc - exp,
+      monthJituIncome: jituInc,
+      monthKuldeepIncome: kuldeepInc,
     };
   }, [paymentRecords, selectedMonth]);
 
@@ -294,6 +308,26 @@ function PaymentsPage() {
           </div>
         </div>
 
+        {/* ── Additional Stats Row (Collectors) ──────────────────────── */}
+        <div className="grid grid-cols-2 gap-3 -mt-3">
+          <div className="rounded-xl border border-sky-400/10 bg-surface-800/40 px-2 py-4 text-center backdrop-blur-lg">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-400/80">
+              Jitu's Income
+            </p>
+            <p className="mt-1.5 text-xl sm:text-2xl font-extrabold tabular-nums text-sky-400">
+              {formatCurrency(monthJituIncome)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-indigo-400/10 bg-surface-800/40 px-2 py-4 text-center backdrop-blur-lg">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/80">
+              Kuldeep's Income
+            </p>
+            <p className="mt-1.5 text-xl sm:text-2xl font-extrabold tabular-nums text-indigo-400">
+              {formatCurrency(monthKuldeepIncome)}
+            </p>
+          </div>
+        </div>
+
         {/* ── Payment Records List ───────────────────────────────────── */}
         {monthRecords && monthRecords.length > 0 ? (
           <section className="pb-20">
@@ -303,9 +337,22 @@ function PaymentsPage() {
               <span className="h-px flex-1 bg-surface-700/50" />
             </h2>
             <div className="flex flex-col gap-2">
-              {monthRecords.map((record) => (
-                <div
-                  key={record.id}
+              {monthRecords.map((record) => {
+                let patient = null;
+                if (record.id.startsWith("patient_")) {
+                  const patientId = record.id.split("_")[1];
+                  patient = patients.find((p) => p.id === patientId);
+                  if (!patient) {
+                    for (const snap of dailyHistory) {
+                      patient = snap.patients.find((p) => p.id === patientId);
+                      if (patient) break;
+                    }
+                  }
+                }
+
+                return (
+                  <div
+                    key={record.id}
                   className={`group flex items-center gap-3 rounded-xl border bg-surface-900/50 px-4 py-3.5 transition-all duration-250 ${
                     record.type === "income"
                       ? "border-emerald-400/10"
@@ -328,9 +375,21 @@ function PaymentsPage() {
                     <p className="text-sm font-semibold text-surface-50 truncate">
                       {record.remark}
                     </p>
-                    <p className="mt-0.5 text-xs text-surface-400/70">
-                      {new Date(record.createdAt).toLocaleDateString()}
-                    </p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-surface-400/70">
+                      <span>{new Date(record.createdAt).toLocaleDateString()}</span>
+                      {patient?.place && (
+                        <>
+                          <span className="text-surface-600">&bull;</span>
+                          <span>{patient.place}</span>
+                        </>
+                      )}
+                      {record.collectedBy && (
+                        <>
+                          <span className="text-surface-600">&bull;</span>
+                          <span className="font-medium text-surface-300">{record.collectedBy}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Amount */}
@@ -366,7 +425,8 @@ function PaymentsPage() {
                     </button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         ) : (

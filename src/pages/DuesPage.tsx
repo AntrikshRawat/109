@@ -10,7 +10,7 @@ const formatCurrency = (n: number) =>
   })
 
 function DuesPage() {
-  const { dues, dueRecords, addDueRecord, collectDueRecord, deleteDueRecord } = useAppStore()
+  const { dues, dueRecords, addDueRecord, collectDueRecord, deleteDueRecord, locations, patients, dailyHistory } = useAppStore()
   const navigate = useNavigate()
 
   /* Form state */
@@ -23,10 +23,24 @@ function DuesPage() {
   const [confirmCollectId, setConfirmCollectId] = useState<string | null>(null)
   const [collectMode, setCollectMode] = useState<'options' | 'partial'>('options')
   const [partialAmount, setPartialAmount] = useState('')
+  const [collectOwner, setCollectOwner] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  /* Search state */
+  /* Search & Filter state */
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedLocation, setSelectedLocation] = useState('')
+
+  const getPatientPlace = (recordId: string) => {
+    if (!recordId.startsWith('patient_')) return null
+    const patientId = recordId.replace('patient_', '')
+    let p = patients.find(x => x.id === patientId)
+    if (p) return p.place
+    for (const snap of dailyHistory) {
+      p = snap.patients.find(x => x.id === patientId)
+      if (p) return p.place
+    }
+    return null
+  }
 
   const confirmCollectRecordData = dueRecords?.find((r) => r.id === confirmCollectId)
   const confirmDeleteRecordData = dueRecords?.find((r) => r.id === confirmDeleteId)
@@ -49,10 +63,11 @@ function DuesPage() {
     setConfirmCollectId(id)
     setCollectMode('options')
     setPartialAmount('')
+    setCollectOwner('')
   }
 
   const handleCollect = (id: string, amount?: number) => {
-    collectDueRecord(id, amount)
+    collectDueRecord(id, amount, collectOwner)
     setConfirmCollectId(null)
   }
 
@@ -118,137 +133,194 @@ function DuesPage() {
             </p>
           </div>
         </div>
-        {/* ── Search Bar ──────────────────────────────────────────── */}
+        {/* ── Search Bar & Filter ──────────────────────────────────── */}
         {dueRecords && dueRecords.length > 0 && (
-          <div className="relative">
-            <svg
-              className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <input
-              id="input-search-dues"
-              type="text"
-              placeholder="Search by patient name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-xl border border-surface-700/40 bg-surface-800/40 py-3 pl-11 pr-10 text-sm text-surface-50 placeholder-surface-500 outline-none backdrop-blur transition focus:border-rose-500/40 focus:ring-2 focus:ring-rose-500/15"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-700/50 hover:text-surface-200"
+          <div className="flex flex-col gap-3">
+            <div className="relative">
+              <svg
+                className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
+                viewBox="0 0 20 20"
+                fill="currentColor"
               >
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
+                <path
+                  fillRule="evenodd"
+                  d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <input
+                id="input-search-dues"
+                type="text"
+                placeholder="Search by patient name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-surface-700/40 bg-surface-800/40 py-3 pl-11 pr-10 text-sm text-surface-50 placeholder-surface-500 outline-none backdrop-blur transition focus:border-rose-500/40 focus:ring-2 focus:ring-rose-500/15"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-700/50 hover:text-surface-200"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {/* Location Dropdown */}
+            {locations && locations.length > 0 && (
+              <div className="relative">
+                <select
+                  value={selectedLocation}
+                  onChange={(e) => setSelectedLocation(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-surface-700/40 bg-surface-800/40 py-3 pl-4 pr-10 text-sm text-surface-50 outline-none backdrop-blur transition focus:border-rose-500/40 focus:ring-2 focus:ring-rose-500/15"
+                >
+                  <option value="">All Locations</option>
+                  {locations.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-surface-500">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             )}
           </div>
         )}
 
         {/* ── Due Records List ───────────────────────────────────── */}
         {(() => {
-          const filteredRecords = (dueRecords || []).filter((r) =>
-            searchQuery
-              ? r.name.toLowerCase().includes(searchQuery.toLowerCase())
-              : true
-          )
+          const filteredRecords = (dueRecords || []).filter((r) => {
+            if (searchQuery && !r.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+            if (selectedLocation) {
+              const place = getPatientPlace(r.id)
+              if (place !== selectedLocation) return false
+            }
+            return true
+          })
 
-          if (dueRecords && dueRecords.length > 0 && filteredRecords.length > 0) return (
-          <section className="pb-20">
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-surface-400">
-              <span className="h-px flex-1 bg-surface-700/50" />
-              History
-              {searchQuery && (
-                <span className="text-[10px] font-semibold text-surface-500">
-                  {filteredRecords.length} of {dueRecords.length}
-                </span>
-              )}
-              <span className="h-px flex-1 bg-surface-700/50" />
-            </h2>
-            <div className="flex flex-col gap-2">
-              {filteredRecords.map((record) => (
-                <div
-                  key={record.id}
-                  className="group flex items-center gap-3 rounded-xl border border-rose-400/10 bg-surface-900/50 px-4 py-3.5 transition-all duration-250 hover:border-rose-400/30"
-                >
-                  {/* Icon */}
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-400">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+          if (dueRecords && dueRecords.length > 0 && filteredRecords.length > 0) {
+            const groupedRecords: Record<string, typeof filteredRecords> = {}
+            filteredRecords.forEach((r) => {
+              const date = new Date(r.createdAt)
+              const monthKey = date.toLocaleString('default', { month: 'long', year: 'numeric' })
+              if (!groupedRecords[monthKey]) {
+                groupedRecords[monthKey] = []
+              }
+              groupedRecords[monthKey].push(r)
+            })
+
+            const sortedMonthKeys = Object.keys(groupedRecords).sort((a, b) => {
+              return new Date(b).getTime() - new Date(a).getTime()
+            })
+
+            return (
+              <section className="pb-20 flex flex-col gap-6">
+                {searchQuery && (
+                  <div className="flex justify-end -mb-4">
+                    <span className="text-[10px] font-semibold text-surface-500">
+                      Found {filteredRecords.length} of {dueRecords.length} dues
+                    </span>
                   </div>
+                )}
+                {sortedMonthKeys.map((monthKey) => {
+                  const recordsInMonth = groupedRecords[monthKey]
+                  const monthTotal = recordsInMonth.reduce((sum, r) => sum + r.amount, 0)
+                  return (
+                    <div key={monthKey}>
+                      <h2 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-surface-400">
+                        <span className="h-px flex-1 bg-surface-700/50" />
+                        {monthKey} <span className="text-rose-400 ml-1">{formatCurrency(monthTotal)}</span>
+                        <span className="h-px flex-1 bg-surface-700/50" />
+                      </h2>
+                      <div className="flex flex-col gap-2">
+                        {recordsInMonth.map((record) => (
+                          <div
+                            key={record.id}
+                            className="group flex items-center gap-3 rounded-xl border border-rose-400/10 bg-surface-900/50 px-4 py-3.5 transition-all duration-250 hover:border-rose-400/30"
+                          >
+                            {/* Icon */}
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/10 text-rose-400">
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
 
-                  {/* Info */}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-surface-50 truncate">
-                      {record.name}
-                    </p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <p className="text-xs text-surface-400/70">
-                        {new Date(record.createdAt).toLocaleDateString()}
-                      </p>
-                      {record.remark && (
-                        <span className="rounded-md bg-surface-700/40 px-1.5 py-0.5 text-[10px] text-surface-300 truncate max-w-[120px]">
-                          {record.remark}
-                        </span>
-                      )}
+                            {/* Info */}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-surface-50 truncate">
+                                {record.name}
+                              </p>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <p className="text-xs text-surface-400/70">
+                                  {new Date(record.createdAt).toLocaleDateString()}
+                                </p>
+                                {record.remark && (
+                                  <span className="rounded-md bg-surface-700/40 px-1.5 py-0.5 text-[10px] text-surface-300 truncate max-w-[120px]">
+                                    {record.remark}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Amount */}
+                            <div className="text-sm font-extrabold tabular-nums text-rose-400">
+                              {formatCurrency(record.amount)}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => handleCollectClick(record.id)}
+                                className="flex cursor-pointer items-center justify-center rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20"
+                              >
+                                Collect
+                              </button>
+                              {!record.id.startsWith('patient_') && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(record.id)}
+                                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-surface-500 transition hover:bg-rose-500/10 hover:text-rose-400"
+                                >
+                                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
+                                    <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1h3a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Amount */}
-                  <div className="text-sm font-extrabold tabular-nums text-rose-400">
-                    {formatCurrency(record.amount)}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      onClick={() => handleCollectClick(record.id)}
-                      className="flex cursor-pointer items-center justify-center rounded-lg bg-emerald-500/10 px-2 py-1.5 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500/20"
-                    >
-                      Collect
-                    </button>
-                    {!record.id.startsWith('patient_') && (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(record.id)}
-                        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-surface-500 transition hover:bg-rose-500/10 hover:text-rose-400"
-                      >
-                        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
-                          <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1h3a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )
+                  )
+                })}
+              </section>
+            )
+          }
 
         if (dueRecords && dueRecords.length > 0 && filteredRecords.length === 0) return (
           <div className="flex flex-col items-center gap-2 py-12 text-center pb-20">
             <p className="text-4xl">🔍</p>
             <p className="text-sm text-surface-400">
-              No dues found for "{searchQuery}"
+              No dues found{searchQuery ? ` for "${searchQuery}"` : ''}{selectedLocation ? ` in "${selectedLocation}"` : ''}
             </p>
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('')
+                setSelectedLocation('')
+              }}
               className="mt-1 cursor-pointer text-xs font-semibold text-rose-400 transition hover:text-rose-300"
             >
-              Clear search
+              Clear filters
             </button>
           </div>
         )
@@ -406,19 +478,42 @@ function DuesPage() {
                     Total Due: {formatCurrency(confirmCollectRecordData.amount)}
                   </span>
                 </p>
+                <div className="mt-4 mb-4">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300">
+                    Collected By
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['JITU', 'KULDEEP'].map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => setCollectOwner(name)}
+                        className={`cursor-pointer rounded-xl border py-2 text-sm font-semibold transition ${
+                          collectOwner === name
+                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 shadow-sm shadow-emerald-500/10'
+                            : 'border-surface-700/50 bg-surface-800/40 text-surface-400 hover:border-surface-600 hover:text-surface-300'
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="mt-6 flex flex-col gap-3">
                   <div className="flex gap-3">
                     <button
                       type="button"
+                      disabled={!collectOwner}
                       onClick={() => handleCollect(confirmCollectId)}
-                      className="flex-1 cursor-pointer rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white transition hover:bg-emerald-500"
+                      className="flex-1 cursor-pointer rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40 hover:bg-emerald-500"
                     >
                       Full Amount
                     </button>
                     <button
                       type="button"
+                      disabled={!collectOwner}
                       onClick={() => setCollectMode('partial')}
-                      className="flex-1 cursor-pointer rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-3 text-sm font-bold text-emerald-400 transition hover:bg-emerald-500/20"
+                      className="flex-1 cursor-pointer rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-3 text-sm font-bold text-emerald-400 transition disabled:cursor-not-allowed disabled:opacity-40 hover:bg-emerald-500/20"
                     >
                       Partial Amount
                     </button>
@@ -473,7 +568,7 @@ function DuesPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={!partialAmount || parseFloat(partialAmount) <= 0 || parseFloat(partialAmount) > confirmCollectRecordData.amount}
+                    disabled={!partialAmount || parseFloat(partialAmount) <= 0 || parseFloat(partialAmount) > confirmCollectRecordData.amount || !collectOwner}
                     className="flex-[1.5] cursor-pointer rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40 hover:bg-emerald-500"
                   >
                     Confirm Collect

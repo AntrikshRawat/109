@@ -1,7 +1,7 @@
 {
-  "name": "Doctor Dashboard",
-  "short_name": "Dashboard",
-  "description": "A patient and payment tracking dashboard for doctors.",
+  "name": "109 Dashboard",
+  "short_name": "109",
+  "description": "A patient and payment tracking dashboard for 109.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",

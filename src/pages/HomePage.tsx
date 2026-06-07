@@ -36,6 +36,18 @@ function HomePage() {
       {/* ── Page container ───────────────────────────────────────────── */}
       <div className="mx-auto flex max-w-lg flex-col gap-6 px-3 py-8 sm:px-5">
 
+        {/* ── Top bar with Locations link ─────────────────────────────── */}
+        <div className="flex items-center justify-end">
+          <button
+            id="btn-locations"
+            type="button"
+            onClick={() => navigate('/locations')}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-surface-700/40 px-3 py-1.5 text-xs font-semibold text-surface-300 transition hover:border-sky-500/30 hover:text-sky-400"
+          >
+            📍 Locations
+          </button>
+        </div>
+
         {/* ── Date Header ────────────────────────────────────────────── */}
         <header id="date-header" className="text-center">
           <p className="text-sm font-medium uppercase tracking-widest text-primary-400">
@@ -228,6 +240,7 @@ function HomePage() {
             </p>
           </div>
         </section>
+
       </div>
     </div>
   )

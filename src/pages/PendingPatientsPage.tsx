@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
 import type { PatientItem } from '../store/useAppStore'
@@ -40,7 +40,10 @@ function PendingPatientsPage() {
     markTreatedWithDue,
     markRemaining,
     deletePatient,
+    updatePatientPayment,
     dailyHistory,
+    paymentRecords,
+    locations,
     currentDate,
     archiveDayIfNeeded,
   } = useAppStore()
@@ -106,10 +109,46 @@ function PendingPatientsPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [formName, setFormName] = useState('')
   const [formPlace, setFormPlace] = useState('')
+  const [selectedPlace, setSelectedPlace] = useState('')
+  const [showPlaceDropdown, setShowPlaceDropdown] = useState(false)
+  const placeRef = useRef<HTMLDivElement>(null)
+
+  /* All unique locations from store */
+  const allLocations = useMemo(() => {
+    const places = new Set<string>(locations || [])
+    for (const p of patients) {
+      if (p.place) places.add(p.place)
+    }
+    for (const snap of dailyHistory) {
+      for (const p of snap.patients) {
+        if (p.place) places.add(p.place)
+      }
+    }
+    return Array.from(places).sort()
+  }, [locations, patients, dailyHistory])
+
+  /* Filtered locations based on search input */
+  const filteredLocations = useMemo(() => {
+    const q = formPlace.trim().toLowerCase()
+    if (!q) return allLocations
+    return allLocations.filter((l) => l.toLowerCase().includes(q))
+  }, [formPlace, allLocations])
+
+  /* Close dropdown on outside click */
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (placeRef.current && !placeRef.current.contains(e.target as Node)) {
+        setShowPlaceDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   /* Income popup state */
   const [incomePatientId, setIncomePatientId] = useState<string | null>(null)
   const [incomeAmount, setIncomeAmount] = useState('')
+  const [incomeCollectedBy, setIncomeCollectedBy] = useState('')
 
   /* Delete state */
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -119,11 +158,11 @@ function PendingPatientsPage() {
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const name = formName.trim()
-    const place = formPlace.trim()
-    if (!name || !place) return
-    addPatient(name, place)
+    if (!name || !selectedPlace) return
+    addPatient(name, selectedPlace)
     setFormName('')
     setFormPlace('')
+    setSelectedPlace('')
     setShowAddForm(false)
   }
 
@@ -131,6 +170,7 @@ function PendingPatientsPage() {
     if (patient.status === 'remaining') {
       setIncomePatientId(patient.id)
       setIncomeAmount('')
+      setIncomeCollectedBy('')
     } else {
       markRemaining(patient.id)
     }
@@ -139,10 +179,73 @@ function PendingPatientsPage() {
   const handleIncomeSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const amount = parseFloat(incomeAmount)
-    if (!incomePatientId || isNaN(amount) || amount < 0) return
-    markTreated(incomePatientId, amount)
+    if (!incomePatientId || isNaN(amount) || amount < 0 || !incomeCollectedBy) return
+    markTreated(incomePatientId, amount, incomeCollectedBy)
     setIncomePatientId(null)
     setIncomeAmount('')
+    setIncomeCollectedBy('')
+  }
+
+  /* Edit popup state */
+  const [editPatientId, setEditPatientId] = useState<string | null>(null)
+  const [editType, setEditType] = useState<'income' | 'due'>('income')
+  const [editAmount, setEditAmount] = useState('')
+  const [editCollectedBy, setEditCollectedBy] = useState('')
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const amount = parseFloat(editAmount)
+    if (!editPatientId || isNaN(amount) || amount <= 0 || !editCollectedBy) return
+    updatePatientPayment(editPatientId, editType, amount, editCollectedBy)
+    setEditPatientId(null)
+    setEditAmount('')
+    setEditCollectedBy('')
+  }
+
+  /* Helper to render patient income and due status based on payment records */
+  const renderPatientFinancials = (patient: PatientItem) => {
+    if (patient.status !== 'treated') return null
+
+    const hasDue = patient.dueAmount !== undefined && patient.dueAmount > 0
+
+    if (hasDue) {
+      return (
+        <>
+          {patient.income > 0 && (
+            <span className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+              Collected: {formatCurrency(patient.income)}
+            </span>
+          )}
+          <span className="flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
+            Due: {formatCurrency(patient.dueAmount!)}
+          </span>
+        </>
+      )
+    }
+
+    // Fully collected
+    if (patient.income > 0) {
+      const pRecords = (paymentRecords || []).filter(r => r.id.includes(`patient_${patient.id}`) && r.type === 'income')
+      const contribs: Record<string, number> = {}
+      for (const r of pRecords) {
+        const owner = r.owner || r.collectedBy || 'Unknown'
+        contribs[owner] = (contribs[owner] || 0) + r.amount
+      }
+      const parts = Object.entries(contribs).map(([owner, amt]) => `${owner}: ${formatCurrency(amt)}`)
+      
+      return (
+        <span className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+          Collected: {formatCurrency(patient.income)}
+          {parts.length > 0 ? (
+            <span className="text-emerald-500/70">· {parts.join(', ')}</span>
+          ) : (
+            (patient.owner || patient.collectedBy) && <span className="text-emerald-500/70">· {patient.owner || patient.collectedBy}</span>
+          )}
+        </span>
+      )
+    }
+    
+    return null
   }
 
   const handleDeleteRequest = (id: string) => {
@@ -213,33 +316,45 @@ function PendingPatientsPage() {
             </svg>
             {patient.place}
           </p>
-          {patient.status === 'treated' && patient.income > 0 && (
-            <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
-              {formatCurrency(patient.income)}
-            </span>
-          )}
-          {patient.status === 'treated' && patient.dueAmount !== undefined && patient.dueAmount > 0 && (
-            <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-              Due: {formatCurrency(patient.dueAmount)}
-            </span>
-          )}
+          {renderPatientFinancials(patient)}
         </div>
       </div>
 
-      {/* Delete – always visible on mobile, hover on desktop */}
-      <button
-        type="button"
-        onClick={() => handleDeleteRequest(patient.id)}
-        className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-surface-500 transition hover:bg-rose-500/10 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100"
-      >
-        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
-          <path
-            fillRule="evenodd"
-            d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1h3a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z"
-          />
-        </svg>
-      </button>
+      {/* Actions container */}
+      <div className="flex items-center gap-1 shrink-0">
+        {/* Edit – treated only */}
+        {patient.status === 'treated' && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditPatientId(patient.id)
+              setEditType(patient.income > 0 ? 'income' : 'due')
+              setEditAmount((patient.income || patient.dueAmount || 0).toString())
+              setEditCollectedBy(patient.collectedBy || '')
+            }}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-surface-500 transition hover:bg-sky-500/10 hover:text-sky-400 sm:opacity-0 sm:group-hover:opacity-100"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Delete – always visible on mobile, hover on desktop */}
+        <button
+          type="button"
+          onClick={() => handleDeleteRequest(patient.id)}
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-surface-500 transition hover:bg-rose-500/10 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z" />
+            <path
+              fillRule="evenodd"
+              d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2h3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1h3a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118z"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 
@@ -286,16 +401,7 @@ function PendingPatientsPage() {
             </svg>
             {patient.place}
           </p>
-          {patient.status === 'treated' && patient.income > 0 && (
-            <span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
-              {formatCurrency(patient.income)}
-            </span>
-          )}
-          {patient.status === 'treated' && patient.dueAmount !== undefined && patient.dueAmount > 0 && (
-            <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-              Due: {formatCurrency(patient.dueAmount)}
-            </span>
-          )}
+          {renderPatientFinancials(patient)}
         </div>
       </div>
     </div>
@@ -329,9 +435,6 @@ function PendingPatientsPage() {
 
         {/* ── Title ──────────────────────────────────────────────────── */}
         <div className="text-center">
-          <p className="text-xs font-medium uppercase tracking-widest text-surface-400">
-            Doctor's Dashboard
-          </p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight">
             <span className="bg-gradient-to-r from-primary-300 to-primary-500 bg-clip-text text-transparent">
               Pending Patients
@@ -439,23 +542,6 @@ function PendingPatientsPage() {
           </div>
         </div>
 
-        {/* ── Quick Links (today only) ─────────────────────────────────── */}
-        {isViewingToday && (
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => navigate('/payments')}
-              className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-400 transition hover:bg-emerald-500/20"
-            >
-              <span>💰</span> View Payments
-            </button>
-            <button
-              onClick={() => navigate('/dues')}
-              className="flex items-center justify-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-400 transition hover:bg-rose-500/20"
-            >
-              <span>📄</span> View Dues
-            </button>
-          </div>
-        )}
 
         {/* ── History income summary (past date only) ──────────────────── */}
         {!isViewingToday && selectedSnapshot && selectedSnapshot.totalIncome > 0 && (
@@ -585,21 +671,81 @@ function PendingPatientsPage() {
                 />
               </div>
 
-              <div>
+              <div ref={placeRef} className="relative">
                 <label
                   htmlFor="input-patient-place"
                   className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300"
                 >
-                  Place (Where they live)
+                  Location
                 </label>
-                <input
-                  id="input-patient-place"
-                  type="text"
-                  placeholder="e.g. Andheri, Mumbai"
-                  value={formPlace}
-                  onChange={(e) => setFormPlace(e.target.value)}
-                  className="w-full rounded-xl border border-surface-700/50 bg-surface-800/60 px-4 py-3 text-sm text-surface-50 placeholder-surface-500 outline-none transition focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20"
-                />
+
+                {selectedPlace ? (
+                  /* ── Selected location chip (read-only) ── */
+                  <div className="flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
+                    <svg className="h-4 w-4 shrink-0 text-sky-400" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 1a5 5 0 0 0-5 5c0 3.53 4.434 8.291 4.62 8.49a.5.5 0 0 0 .76 0C8.566 14.29 13 9.53 13 6a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" />
+                    </svg>
+                    <span className="flex-1 text-sm font-medium text-surface-100">{selectedPlace}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPlace('')
+                        setFormPlace('')
+                      }}
+                      className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-surface-400 transition hover:bg-surface-700/50 hover:text-surface-200"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  /* ── Search input ── */
+                  <>
+                    <input
+                      id="input-patient-place"
+                      type="text"
+                      placeholder="Search locations…"
+                      value={formPlace}
+                      onChange={(e) => {
+                        setFormPlace(e.target.value)
+                        setShowPlaceDropdown(true)
+                      }}
+                      onFocus={() => setShowPlaceDropdown(true)}
+                      autoComplete="off"
+                      className="w-full rounded-xl border border-surface-700/50 bg-surface-800/60 px-4 py-3 text-sm text-surface-50 placeholder-surface-500 outline-none transition focus:border-primary-500/50 focus:ring-2 focus:ring-primary-500/20"
+                    />
+
+                    {/* Dropdown */}
+                    {showPlaceDropdown && filteredLocations.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-40 overflow-y-auto rounded-xl border border-surface-700/50 bg-surface-900 py-1 shadow-2xl">
+                        {filteredLocations.map((loc) => (
+                          <button
+                            key={loc}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPlace(loc)
+                              setFormPlace(loc)
+                              setShowPlaceDropdown(false)
+                            }}
+                            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left text-sm text-surface-200 transition hover:bg-surface-800"
+                          >
+                            <svg className="h-3.5 w-3.5 shrink-0 text-sky-400/70" viewBox="0 0 16 16" fill="currentColor">
+                              <path d="M8 1a5 5 0 0 0-5 5c0 3.53 4.434 8.291 4.62 8.49a.5.5 0 0 0 .76 0C8.566 14.29 13 9.53 13 6a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" />
+                            </svg>
+                            {loc}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {showPlaceDropdown && filteredLocations.length === 0 && formPlace.trim() && (
+                      <div className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-xl border border-surface-700/50 bg-surface-900 px-4 py-3 shadow-2xl">
+                        <p className="text-xs text-surface-400">No matching locations found</p>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               <div className="mt-1 flex gap-3">
@@ -614,7 +760,7 @@ function PendingPatientsPage() {
                   id="btn-submit-patient"
                   type="submit"
                   className="flex-1 cursor-pointer rounded-xl bg-primary-600 py-3 text-sm font-bold text-white transition hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-40 z-100"
-                  disabled={!formName.trim() || !formPlace.trim()}
+                  disabled={!formName.trim() || !selectedPlace}
                 >
                   Add Patient
                 </button>
@@ -636,6 +782,7 @@ function PendingPatientsPage() {
             onClick={() => {
               setIncomePatientId(null)
               setIncomeAmount('')
+              setIncomeCollectedBy('')
             }}
           />
 
@@ -645,6 +792,7 @@ function PendingPatientsPage() {
               onClick={() => {
                 setIncomePatientId(null)
                 setIncomeAmount('')
+                setIncomeCollectedBy('')
               }}
               className="absolute right-4 top-4 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-surface-400 transition hover:bg-surface-700/50 hover:text-surface-200"
             >
@@ -693,6 +841,31 @@ function PendingPatientsPage() {
                 </div>
               </div>
 
+              {/* Collected By */}
+              <div>
+                <label
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300"
+                >
+                  Collected By
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['JITU', 'KULDEEP'].map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setIncomeCollectedBy(name)}
+                      className={`cursor-pointer rounded-xl border py-2.5 text-sm font-semibold transition ${
+                        incomeCollectedBy === name
+                          ? 'border-primary-500/40 bg-primary-500/15 text-primary-300 shadow-sm shadow-primary-500/10'
+                          : 'border-surface-700/50 bg-surface-800/40 text-surface-400 hover:border-surface-600 hover:text-surface-300'
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex flex-col gap-3">
                 <div className="flex gap-3">
                   <button
@@ -700,6 +873,7 @@ function PendingPatientsPage() {
                     onClick={() => {
                       setIncomePatientId(null)
                       setIncomeAmount('')
+                      setIncomeCollectedBy('')
                     }}
                     className="flex-1 cursor-pointer rounded-xl border border-surface-700/50 bg-surface-800/40 py-3 text-sm font-semibold text-surface-300 transition hover:bg-surface-700/60"
                   >
@@ -709,7 +883,7 @@ function PendingPatientsPage() {
                     id="btn-submit-income"
                     type="submit"
                     className="flex-[1.5] cursor-pointer rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={incomeAmount === '' || parseFloat(incomeAmount) < 0}
+                    disabled={incomeAmount === '' || parseFloat(incomeAmount) < 0 || !incomeCollectedBy}
                   >
                     Add to Income
                   </button>
@@ -719,15 +893,134 @@ function PendingPatientsPage() {
                   onClick={(e) => {
                     e.preventDefault()
                     const amount = parseFloat(incomeAmount)
-                    if (!incomePatientId || isNaN(amount) || amount < 0) return
-                    markTreatedWithDue(incomePatientId, amount)
+                    if (!incomePatientId || isNaN(amount) || amount < 0 || !incomeCollectedBy) return
+                    markTreatedWithDue(incomePatientId, amount, incomeCollectedBy)
                     setIncomePatientId(null)
                     setIncomeAmount('')
+                    setIncomeCollectedBy('')
                   }}
                   className="w-full cursor-pointer rounded-xl border border-amber-500/30 bg-amber-500/10 py-3 text-sm font-bold text-amber-500 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={incomeAmount === '' || parseFloat(incomeAmount) <= 0}
+                  disabled={incomeAmount === '' || parseFloat(incomeAmount) <= 0 || !incomeCollectedBy}
                 >
                   Add to Dues
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  MODAL: Edit Patient Money/Collector                           */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {editPatientId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setEditPatientId(null)
+            }
+          }}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease]" />
+
+          <div className="relative z-10 w-full max-w-sm animate-[slideUp_0.25s_cubic-bezier(0.16,1,0.3,1)] overflow-hidden rounded-3xl border border-surface-700/40 bg-surface-900 shadow-2xl">
+            <div className="bg-surface-800/50 p-5 backdrop-blur">
+              <h3 className="text-lg font-bold text-surface-50">Edit Payment Info</h3>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="p-5">
+              <div className="mb-5">
+                <label
+                  htmlFor="editType"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300"
+                >
+                  Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditType('income')}
+                    className={`cursor-pointer rounded-xl border py-2.5 text-sm font-semibold transition ${
+                      editType === 'income'
+                        ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 shadow-sm shadow-emerald-500/10'
+                        : 'border-surface-700/50 bg-surface-800/40 text-surface-400 hover:border-surface-600 hover:text-surface-300'
+                    }`}
+                  >
+                    Income
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditType('due')}
+                    className={`cursor-pointer rounded-xl border py-2.5 text-sm font-semibold transition ${
+                      editType === 'due'
+                        ? 'border-amber-500/40 bg-amber-500/15 text-amber-300 shadow-sm shadow-amber-500/10'
+                        : 'border-surface-700/50 bg-surface-800/40 text-surface-400 hover:border-surface-600 hover:text-surface-300'
+                    }`}
+                  >
+                    Due
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-5">
+                <label
+                  htmlFor="editAmount"
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300"
+                >
+                  Amount (₹)
+                </label>
+                <input
+                  id="editAmount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="w-full rounded-xl border border-surface-700/50 bg-surface-950/50 px-4 py-3.5 font-medium text-surface-50 shadow-inner placeholder:text-surface-600 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 transition"
+                  placeholder="e.g. 500"
+                  required
+                />
+              </div>
+
+              <div className="mb-6">
+                <label
+                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-surface-300"
+                >
+                  Collected By
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['JITU', 'KULDEEP'].map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setEditCollectedBy(name)}
+                      className={`cursor-pointer rounded-xl border py-2.5 text-sm font-semibold transition ${
+                        editCollectedBy === name
+                          ? 'border-primary-500/40 bg-primary-500/15 text-primary-300 shadow-sm shadow-primary-500/10'
+                          : 'border-surface-700/50 bg-surface-800/40 text-surface-400 hover:border-surface-600 hover:text-surface-300'
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditPatientId(null)}
+                  className="flex-1 cursor-pointer rounded-xl border border-surface-700/50 bg-surface-800/40 py-3 text-sm font-semibold text-surface-300 transition hover:bg-surface-700/60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[1.5] cursor-pointer rounded-xl bg-sky-600 py-3 text-sm font-bold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={editAmount === '' || parseFloat(editAmount) <= 0 || !editCollectedBy}
+                >
+                  Save Changes
                 </button>
               </div>
             </form>
