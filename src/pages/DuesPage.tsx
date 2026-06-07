@@ -88,7 +88,7 @@ function DuesPage() {
     <div className="relative min-h-dvh bg-surface-950 text-surface-50 font-sans">
       {/* ── Ambient background glows ─────────────────────────────────── */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="animate-pulse-glow absolute -left-32 top-0 h-[500px] w-[500px] rounded-full bg-rose-500/15 blur-[140px]" />
+        <div className="animate-pulse-glow absolute -left-32 top-0 h-125 w-125 rounded-full bg-rose-500/15 blur-[140px]" />
       </div>
 
       <div className="mx-auto flex max-w-lg flex-col gap-6 px-3 py-8 sm:px-5">
@@ -262,7 +262,7 @@ function DuesPage() {
                                   {new Date(record.createdAt).toLocaleDateString()}
                                 </p>
                                 {record.remark && (
-                                  <span className="rounded-md bg-surface-700/40 px-1.5 py-0.5 text-[10px] text-surface-300 truncate max-w-[120px]">
+                                  <span className="rounded-md bg-surface-700/40 px-1.5 py-0.5 text-[10px] text-surface-300 truncate max-w-30">
                                     {record.remark}
                                   </span>
                                 )}
