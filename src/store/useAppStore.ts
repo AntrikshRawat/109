@@ -90,6 +90,7 @@ interface AppActions {
   collectDueRecord: (id: string, partialAmount?: number, collectedBy?: string) => void
   deleteDueRecord: (id: string) => void
   addLocation: (name: string) => boolean
+  editLocation: (oldName: string, newName: string) => boolean
   deleteLocation: (name: string) => void
   archiveDayIfNeeded: () => void
 }
@@ -479,9 +480,39 @@ export const useAppStore = create<AppState & AppActions>()(
         return true
       },
 
+      editLocation: (oldName, newName) => {
+        const trimmed = newName.trim()
+        if (!trimmed) return false
+        set((s) => {
+          let newLocations = (s.locations || []).map(l => l === oldName ? trimmed : l)
+          if (!newLocations.includes(trimmed)) {
+            newLocations.push(trimmed)
+          }
+          newLocations = newLocations.filter((l, idx) => newLocations.indexOf(l) === idx)
+          
+          const patients = s.patients.map(p => p.place === oldName ? { ...p, place: trimmed } : p)
+          const dailyHistory = s.dailyHistory.map(snap => ({
+            ...snap,
+            patients: snap.patients.map(p => p.place === oldName ? { ...p, place: trimmed } : p)
+          }))
+
+          return {
+            locations: newLocations,
+            patients,
+            dailyHistory
+          }
+        })
+        return true
+      },
+
       deleteLocation: (name) =>
         set((s) => ({
           locations: (s.locations || []).filter((l) => l !== name),
+          patients: s.patients.map(p => p.place === name ? { ...p, place: '' } : p),
+          dailyHistory: s.dailyHistory.map(snap => ({
+            ...snap,
+            patients: snap.patients.map(p => p.place === name ? { ...p, place: '' } : p)
+          }))
         })),
 
       archiveDayIfNeeded: () =>
