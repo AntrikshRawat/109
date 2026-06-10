@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useAppStore, selectNetRevenue } from '../store/useAppStore'
+import { useAppStore } from '../store/useAppStore'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 const formatCurrency = (n: number) =>
@@ -19,10 +19,28 @@ const formatDate = (d: Date) => {
 
 /* ── Home Page ───────────────────────────────────────────────────────── */
 function HomePage() {
-  const { pendingPatients, payments, dues } = useAppStore()
-  const netRevenue = useAppStore(selectNetRevenue)
+  const { pendingPatients, dues, paymentRecords, dailyHistory } = useAppStore()
   const navigate = useNavigate()
-  const { day, month, year, weekday } = formatDate(new Date())
+  const now = new Date()
+  const { day, month, year, weekday } = formatDate(now)
+
+  // Compute monthly totals from current + archived payment records
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const allMonthRecords = (() => {
+    const records = [...(paymentRecords || [])]
+    for (const snap of dailyHistory) {
+      if (snap.paymentRecords) {
+        records.push(...snap.paymentRecords)
+      }
+    }
+    return records.filter((r) => {
+      const d = new Date(r.createdAt)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === currentMonthStr
+    })
+  })()
+  const monthlyIncome = allMonthRecords.filter((r) => r.type === 'income').reduce((sum, r) => sum + r.amount, 0)
+  const monthlyExpense = allMonthRecords.filter((r) => r.type === 'expense').reduce((sum, r) => sum + r.amount, 0)
+  const netRevenue = monthlyIncome - monthlyExpense
 
   return (
     <div className="relative min-h-dvh bg-surface-950 text-surface-50 font-sans">
@@ -156,7 +174,7 @@ function HomePage() {
               </p>
               <p className="mt-1.5 flex items-baseline justify-center gap-0.5 text-sm font-extrabold tabular-nums text-emerald-400 sm:mt-2 sm:text-lg">
                 <span className="text-xs font-bold">↑</span>
-                {formatCurrency(payments.income)}
+                {formatCurrency(monthlyIncome)}
               </p>
             </div>
 
@@ -171,7 +189,7 @@ function HomePage() {
               </p>
               <p className="mt-1.5 flex items-baseline justify-center gap-0.5 text-sm font-extrabold tabular-nums text-rose-400 sm:mt-2 sm:text-lg">
                 <span className="text-xs font-bold">↓</span>
-                {formatCurrency(payments.expense)}
+                {formatCurrency(monthlyExpense)}
               </p>
             </div>
 

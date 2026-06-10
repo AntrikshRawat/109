@@ -45,14 +45,8 @@ function PendingPatientsPage() {
     paymentRecords,
     locations,
     currentDate,
-    archiveDayIfNeeded,
   } = useAppStore()
   const navigate = useNavigate()
-
-  /* Auto-archive on mount / day change */
-  useEffect(() => {
-    archiveDayIfNeeded()
-  }, [])
 
   /* Currently selected date in the strip – defaults to today */
   const [selectedDate, setSelectedDate] = useState(currentDate)

@@ -36,17 +36,28 @@ function PaymentsPage() {
   const currentMonth = getCurrentMonthStr();
 
   /* ── Build sorted unique months from payment records ────────────── */
+  const allPaymentRecords = useMemo(() => {
+    // Combine current day's records with historical records from dailyHistory
+    const records = [...(paymentRecords || [])];
+    for (const snap of dailyHistory) {
+      if (snap.paymentRecords) {
+        records.push(...snap.paymentRecords);
+      }
+    }
+    return records;
+  }, [paymentRecords, dailyHistory]);
+
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     months.add(currentMonth);
-    paymentRecords?.forEach((r) => {
+    allPaymentRecords.forEach((r) => {
       const d = new Date(r.createdAt);
       months.add(
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
       );
     });
     return Array.from(months).sort((a, b) => a.localeCompare(b));
-  }, [paymentRecords, currentMonth]);
+  }, [allPaymentRecords, currentMonth]);
 
   /* ── Selected month state ──────────────────────────────────────── */
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -83,7 +94,7 @@ function PaymentsPage() {
 
   /* ── Derived monthly stats ─────────────────────────────────────── */
   const { monthRecords, monthIncome, monthExpense, monthNet, monthJituIncome, monthKuldeepIncome } = useMemo(() => {
-    const records = (paymentRecords || []).filter((r) => {
+    const records = allPaymentRecords.filter((r) => {
       const d = new Date(r.createdAt);
       const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       return mStr === selectedMonth;
@@ -116,7 +127,7 @@ function PaymentsPage() {
       monthJituIncome: jituInc,
       monthKuldeepIncome: kuldeepInc,
     };
-  }, [paymentRecords, selectedMonth]);
+  }, [allPaymentRecords, selectedMonth]);
 
   /* ── Form state ────────────────────────────────────────────────── */
   const [showAddForm, setShowAddForm] = useState(false);

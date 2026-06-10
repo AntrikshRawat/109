@@ -44,6 +44,8 @@ export interface DailySnapshot {
   remaining: number
   treated: number
   totalIncome: number
+  totalExpense: number
+  paymentRecords: PaymentRecord[]
 }
 
 /* ── State Shape ─────────────────────────────────────────────────────── */
@@ -165,12 +167,16 @@ export const useAppStore = create<AppState & AppActions>()(
             income: 0,
             createdAt: Date.now(),
           }
+          // Also persist the location into the locations array so it never depends on patient data
+          const existingLocations = s.locations || []
+          const locationAlreadyStored = existingLocations.some((l) => l.toLowerCase() === place.toLowerCase())
           return {
             patients: [newItem, ...s.patients],
             pendingPatients: {
               ...s.pendingPatients,
               remaining: s.pendingPatients.remaining + 1,
             },
+            locations: locationAlreadyStored ? existingLocations : [...existingLocations, place],
           }
         });
         return true;
@@ -520,17 +526,18 @@ export const useAppStore = create<AppState & AppActions>()(
           const today = getTodayString()
           if (s.currentDate === today) return {}
 
-          // Archive the previous day's patients into history
+          // Archive the previous day's patients + payment records into history
           const prevDate = s.currentDate
-          const totalIncome = s.patients
-            .filter((p) => p.status === 'treated')
-            .reduce((sum, p) => sum + (p.income || 0), 0)
+          const totalIncome = s.payments.income
+          const totalExpense = s.payments.expense
           const snapshot: DailySnapshot = {
             date: prevDate,
             patients: s.patients,
             remaining: s.patients.filter((p) => p.status === 'remaining').length,
             treated: s.patients.filter((p) => p.status === 'treated').length,
             totalIncome,
+            totalExpense,
+            paymentRecords: s.paymentRecords || [],
           }
 
           // Prevent duplicate snapshots for the same date
@@ -543,8 +550,11 @@ export const useAppStore = create<AppState & AppActions>()(
           return {
             dailyHistory: newHistory,
             currentDate: today,
+            // Reset daily data — historical data is safely in dailyHistory
             patients: [],
             pendingPatients: { remaining: 0, treated: 0 },
+            paymentRecords: [],
+            payments: { income: 0, expense: 0 },
           }
         }),
     }),
