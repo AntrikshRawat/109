@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { saveSnapshot, getAllSnapshots, updateAllSnapshots } from './indexedDB'
 
 /* ── Patient Item ────────────────────────────────────────────────────── */
 export interface PatientItem {
@@ -94,7 +95,8 @@ interface AppActions {
   addLocation: (name: string) => boolean
   editLocation: (oldName: string, newName: string) => boolean
   deleteLocation: (name: string) => void
-  archiveDayIfNeeded: () => void
+  archiveDayIfNeeded: () => Promise<void>
+  loadDailyHistory: () => Promise<void>
 }
 
 /* ── Derived Helpers ─────────────────────────────────────────────────── */
@@ -508,10 +510,15 @@ export const useAppStore = create<AppState & AppActions>()(
             dailyHistory
           }
         })
+        // Also update IndexedDB snapshots
+        updateAllSnapshots((snap) => ({
+          ...snap,
+          patients: snap.patients.map(p => p.place === oldName ? { ...p, place: trimmed } : p)
+        })).catch(err => console.error('Failed to update IndexedDB snapshots:', err))
         return true
       },
 
-      deleteLocation: (name) =>
+      deleteLocation: (name) => {
         set((s) => ({
           locations: (s.locations || []).filter((l) => l !== name),
           patients: s.patients.map(p => p.place === name ? { ...p, place: '' } : p),
@@ -519,28 +526,41 @@ export const useAppStore = create<AppState & AppActions>()(
             ...snap,
             patients: snap.patients.map(p => p.place === name ? { ...p, place: '' } : p)
           }))
-        })),
+        }))
+        // Also update IndexedDB snapshots
+        updateAllSnapshots((snap) => ({
+          ...snap,
+          patients: snap.patients.map(p => p.place === name ? { ...p, place: '' } : p)
+        })).catch(err => console.error('Failed to update IndexedDB snapshots:', err))
+      },
 
-      archiveDayIfNeeded: () =>
+      archiveDayIfNeeded: async () => {
+        const currentState = useAppStore.getState()
+        const today = getTodayString()
+        if (currentState.currentDate === today) return
+
+        // Archive the previous day's patients + payment records
+        const prevDate = currentState.currentDate
+        const snapshot: DailySnapshot = {
+          date: prevDate,
+          patients: currentState.patients,
+          remaining: currentState.patients.filter((p) => p.status === 'remaining').length,
+          treated: currentState.patients.filter((p) => p.status === 'treated').length,
+          totalIncome: currentState.payments.income,
+          totalExpense: currentState.payments.expense,
+          paymentRecords: currentState.paymentRecords || [],
+        }
+
+        // Save snapshot to IndexedDB FIRST — if this fails, don't reset state
+        try {
+          await saveSnapshot(snapshot)
+        } catch (err) {
+          console.error('❌ Failed to archive day to IndexedDB:', err)
+          return
+        }
+
+        // IndexedDB save succeeded — safely reset daily state
         set((s) => {
-          const today = getTodayString()
-          if (s.currentDate === today) return {}
-
-          // Archive the previous day's patients + payment records into history
-          const prevDate = s.currentDate
-          const totalIncome = s.payments.income
-          const totalExpense = s.payments.expense
-          const snapshot: DailySnapshot = {
-            date: prevDate,
-            patients: s.patients,
-            remaining: s.patients.filter((p) => p.status === 'remaining').length,
-            treated: s.patients.filter((p) => p.status === 'treated').length,
-            totalIncome,
-            totalExpense,
-            paymentRecords: s.paymentRecords || [],
-          }
-
-          // Prevent duplicate snapshots for the same date
           const existingIdx = s.dailyHistory.findIndex((d) => d.date === prevDate)
           const newHistory =
             existingIdx >= 0
@@ -550,16 +570,37 @@ export const useAppStore = create<AppState & AppActions>()(
           return {
             dailyHistory: newHistory,
             currentDate: today,
-            // Reset daily data — historical data is safely in dailyHistory
+            // Reset daily data — historical data is safely in IndexedDB + in-memory
             patients: [],
             pendingPatients: { remaining: 0, treated: 0 },
             paymentRecords: [],
             payments: { income: 0, expense: 0 },
           }
-        }),
+        })
+      },
+
+      loadDailyHistory: async () => {
+        try {
+          const snapshots = await getAllSnapshots()
+          set({ dailyHistory: snapshots })
+        } catch (err) {
+          console.error('Failed to load daily history from IndexedDB:', err)
+        }
+      },
     }),
     {
       name: 'app-storage-v6',
+      partialize: (state) => ({
+        pendingPatients: state.pendingPatients,
+        payments: state.payments,
+        dues: state.dues,
+        patients: state.patients,
+        paymentRecords: state.paymentRecords,
+        dueRecords: state.dueRecords,
+        locations: state.locations,
+        currentDate: state.currentDate,
+        // dailyHistory intentionally excluded — stored in IndexedDB
+      }),
     },
   ),
 )
