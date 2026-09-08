@@ -3,11 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import getOrInitializeSyncKey from '../services/syncKey'
 import { performDailySync } from '../services/backup'
 import { handleCloudRestore } from '../services/restore'
-import { useAppStore } from '../store/useAppStore'
 
 function SettingsPage() {
   const navigate = useNavigate()
-  const loadDailyHistory = useAppStore((s) => s.loadDailyHistory)
 
   const [syncKey, setSyncKey] = useState('')
   const [restoreKey, setRestoreKey] = useState('')
@@ -74,10 +72,6 @@ function SettingsPage() {
       const success = await handleCloudRestore(keyToUse)
       if (success) {
         setMessage({ type: 'success', text: 'Data restored successfully! Reloading app...' })
-        // Reload the page so Zustand picks up the restored localStorage state.
-        // Do NOT call loadDailyHistory() here — it triggers Zustand's persist
-        // middleware which overwrites the freshly restored localStorage with
-        // the stale in-memory state. App.tsx init handles it after reload.
         setTimeout(() => window.location.reload(), 1500)
       } else {
         setMessage({ type: 'error', text: 'Restore failed. The sync key may be invalid or no backup exists.' })
