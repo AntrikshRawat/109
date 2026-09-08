@@ -55,7 +55,15 @@ function HomePage() {
       <div className="mx-auto flex max-w-lg flex-col gap-6 px-3 py-8 sm:px-5">
 
         {/* ── Top bar with Locations link ─────────────────────────────── */}
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-end gap-2">
+          <button
+            id="btn-settings"
+            type="button"
+            onClick={() => navigate('/settings')}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-surface-700/40 px-3 py-1.5 text-xs font-semibold text-surface-300 transition hover:border-primary-500/30 hover:text-primary-400"
+          >
+            ⚙️ Sync
+          </button>
           <button
             id="btn-locations"
             type="button"

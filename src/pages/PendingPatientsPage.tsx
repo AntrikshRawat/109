@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
-import type { PatientItem } from '../store/useAppStore'
+import type { PatientItem } from '../interfaces' 
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 const formatCurrency = (n: number) =>

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { useAppStore } from './store/useAppStore'
 import { migrateFromLocalStorage, type MigrationResult } from './store/indexedDB'
+import { performDailySync } from './services/backup'
 import HomePage from './pages/HomePage'
 import PendingPatientsPage from './pages/PendingPatientsPage'
 import PaymentsPage from './pages/PaymentsPage'
 import DuesPage from './pages/DuesPage'
 import LocationsPage from './pages/LocationsPage'
+import SettingsPage from './pages/SettingsPage'
 
 function App() {
   const archiveDayIfNeeded = useAppStore((s) => s.archiveDayIfNeeded)
@@ -33,6 +35,11 @@ function App() {
 
         // Step 3: Archive previous day if needed (saves to IndexedDB first)
         await archiveDayIfNeeded()
+
+        // Step 4: Auto-sync backup to cloud (once per day, non-blocking)
+        performDailySync().catch((err) =>
+          console.warn('Auto-backup skipped:', err)
+        )
       } catch (err) {
         console.error('App initialization error:', err)
       } finally {
@@ -106,6 +113,7 @@ function App() {
         <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/dues" element={<DuesPage />} />
         <Route path="/locations" element={<LocationsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </>
   )

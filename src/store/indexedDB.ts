@@ -1,15 +1,15 @@
-import type { DailySnapshot } from './useAppStore'
+import type { DailySnapshot } from '../interfaces'
 
 /* ── Constants ───────────────────────────────────────────────────────── */
 const DB_NAME = 'medical-dashboard-db'
 const DB_VERSION = 1
-const SNAPSHOTS_STORE = 'dailySnapshots'
-const METADATA_STORE = 'metadata'
+export const SNAPSHOTS_STORE = 'dailySnapshots'
+export const METADATA_STORE = 'metadata'
 
 /* ── Database Connection (singleton) ─────────────────────────────────── */
 let dbInstance: IDBDatabase | null = null
 
-function openDB(): Promise<IDBDatabase> {
+export function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return Promise.resolve(dbInstance)
 
   return new Promise((resolve, reject) => {
