@@ -42,11 +42,13 @@ function SettingsPage() {
     setIsBacking(true)
     setMessage(null)
     try {
-      // Force a sync regardless of lastSyncDate
-      localStorage.removeItem('lastSyncDate')
-      await performDailySync()
-      setLastSyncDate(localStorage.getItem('lastSyncDate'))
-      setMessage({ type: 'success', text: 'Backup completed successfully!' })
+      const success = await performDailySync(true)
+      if (success) {
+        setLastSyncDate(localStorage.getItem('lastSyncDate'))
+        setMessage({ type: 'success', text: 'Backup completed successfully!' })
+      } else {
+        setMessage({ type: 'error', text: 'Backup failed. Please check server status or connection.' })
+      }
     } catch {
       setMessage({ type: 'error', text: 'Backup failed. Check your connection.' })
     } finally {

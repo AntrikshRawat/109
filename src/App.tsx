@@ -51,9 +51,12 @@ function App() {
 
   /* Re-check when the user returns to the tab (handles overnight / multi-day gaps) */
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        archiveDayIfNeeded()
+        await archiveDayIfNeeded()
+        performDailySync().catch((err) =>
+          console.warn('Auto-backup skipped:', err)
+        )
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)

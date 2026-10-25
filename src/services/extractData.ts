@@ -1,6 +1,7 @@
 import { openDB } from "../store/indexedDB"
 import type { DatabaseBackupPayload, CurrentDayState } from "../interfaces"
 import { SNAPSHOTS_STORE, METADATA_STORE } from "../store/indexedDB"
+import { useAppStore } from "../store/useAppStore"
 
 export async function exportDatabaseForBackup(): Promise<DatabaseBackupPayload> {
   const db = await openDB()
@@ -22,23 +23,38 @@ export async function exportDatabaseForBackup(): Promise<DatabaseBackupPayload> 
         completedStores++
 
         if (completedStores === storeNames.length) {
-          // Also capture current-day state from localStorage (Zustand persisted data)
+          // Capture current-day state primarily from in-memory Zustand store (reliable)
           try {
-            const raw = localStorage.getItem('app-storage-v6')
-            if (raw) {
-              const parsed = JSON.parse(raw)
-              const state = parsed.state
-              if (state) {
-                backupData.currentDayState = {
-                  pendingPatients: state.pendingPatients,
-                  payments: state.payments,
-                  dues: state.dues,
-                  patients: state.patients || [],
-                  paymentRecords: state.paymentRecords || [],
-                  dueRecords: state.dueRecords || [],
-                  locations: state.locations || [],
-                  currentDate: state.currentDate,
-                } satisfies CurrentDayState
+            const inMemory = useAppStore.getState()
+            if (inMemory && inMemory.currentDate) {
+              backupData.currentDayState = {
+                pendingPatients: inMemory.pendingPatients,
+                payments: inMemory.payments,
+                dues: inMemory.dues,
+                patients: inMemory.patients || [],
+                paymentRecords: inMemory.paymentRecords || [],
+                dueRecords: inMemory.dueRecords || [],
+                locations: inMemory.locations || [],
+                currentDate: inMemory.currentDate,
+              } satisfies CurrentDayState
+            } else {
+              // Fallback to localStorage
+              const raw = localStorage.getItem('app-storage-v6')
+              if (raw) {
+                const parsed = JSON.parse(raw)
+                const state = parsed.state
+                if (state) {
+                  backupData.currentDayState = {
+                    pendingPatients: state.pendingPatients,
+                    payments: state.payments,
+                    dues: state.dues,
+                    patients: state.patients || [],
+                    paymentRecords: state.paymentRecords || [],
+                    dueRecords: state.dueRecords || [],
+                    locations: state.locations || [],
+                    currentDate: state.currentDate,
+                  } satisfies CurrentDayState
+                }
               }
             }
           } catch (err) {
